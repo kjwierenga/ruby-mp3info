@@ -634,6 +634,36 @@ private
     ### extracts MPEG info from MPEG header and stores it in the hash @mpeg
     ###  head (fixnum) = valid 4 byte MPEG header
     
+    # Some mp3 files have corruption in the beginning because they were recorded
+    # from a live stream which doesn't start on an mp3 frame boundary.
+    #
+    # Make an educated guess of the most likely bitrate by loading 20 frames and
+    # selecting the frame with the most common bitrate.
+    # E.g. frame bitrates:
+    # 320
+    # 16
+    # 16
+    # 56
+    # 16
+    # 56
+    # 16
+    # 16
+    # 320
+    # 16
+    # 16
+    # 16
+    # 16
+    # 16
+    # 40
+    # 96
+    # 16
+    # 256
+    # 16
+    # 16
+    #
+    # Results in bitrate_frequency: {16=>13, 56=>2, 320=>2, 40=>1, 96=>1, 256=>1}
+    # The result would be that bitrate 16 which has highest frequency (13) would be selected
+    #
     bitrate_frequency = Hash.new(0)
     frame_info = {}
     0.upto(19) do |i|
