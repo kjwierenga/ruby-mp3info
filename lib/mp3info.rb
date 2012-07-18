@@ -621,36 +621,76 @@ private
     length = (frame_count-1) * frame_length
     [average_bitrate, length]
   end
+  
+  def get_mpeg_header(io)
+    head = find_next_frame() 
+    first_frame_pos = io.pos - 4
+    current_frame = Mp3Info.get_frames_infos(head)
+    
+    [first_frame_pos, current_frame, head]
+  end
 
   def parse_mp3
     ### extracts MPEG info from MPEG header and stores it in the hash @mpeg
     ###  head (fixnum) = valid 4 byte MPEG header
     
-    found = false
-
-    head = nil
-    5.times do
-      head = find_next_frame() 
-      @first_frame_pos = @io.pos - 4
-      current_frame = Mp3Info.get_frames_infos(head)
-      @mpeg_version = current_frame[:mpeg_version]
-      @layer = current_frame[:layer]
-      @header[:error_protection] = head[16] == 0 ? true : false
-      @bitrate = current_frame[:bitrate]
-      @samplerate = current_frame[:samplerate]
-      @header[:padding] = current_frame[:padding]
-      @header[:private] = head[8] == 0 ? true : false
-      @channel_mode = CHANNEL_MODE[@channel_num = Mp3Info.bits(head, 7,6)]
-      @header[:mode_extension] = Mp3Info.bits(head, 5,4)
-      @header[:copyright] = (head[3] == 1 ? true : false)
-      @header[:original] = (head[2] == 1 ? true : false)
-      @header[:emphasis] = Mp3Info.bits(head, 1,0)
-      @vbr = false
-      found = true
-      break
+    # Some mp3 files have corruption in the beginning because they were recorded
+    # from a live stream which doesn't start on an mp3 frame boundary.
+    #
+    # Make an educated guess of the most likely bitrate by loading 20 frames and
+    # selecting the frame with the most common bitrate.
+    # E.g. frame bitrates:
+    # 320
+    # 16
+    # 16
+    # 56
+    # 16
+    # 56
+    # 16
+    # 16
+    # 320
+    # 16
+    # 16
+    # 16
+    # 16
+    # 16
+    # 40
+    # 96
+    # 16
+    # 256
+    # 16
+    # 16
+    #
+    # Results in bitrate_frequency: {16=>13, 56=>2, 320=>2, 40=>1, 96=>1, 256=>1}
+    # The result would be that bitrate 16 which has highest frequency (13) would be selected
+    #
+    bitrate_frequency = Hash.new(0)
+    frame_info = {}
+    0.upto(19) do |i|
+      first_frame_pos, current_frame, head = get_mpeg_header(@io)
+      frame_info[current_frame[:bitrate]] = [first_frame_pos, current_frame, head]
+      bitrate_frequency[current_frame[:bitrate]] += 1
     end
+    
+    # find most common bitrate in first 20 frames
+    heuristic_bitrate = bitrate_frequency.sort_by{|k,v| v}.last.first
+    
+    first_frame_pos, current_frame, head = frame_info[heuristic_bitrate]
 
-    raise(Mp3InfoError, "Cannot find good frame") unless found
+    @first_frame_pos = first_frame_pos
+    @mpeg_version = current_frame[:mpeg_version]
+    @layer = current_frame[:layer]
+    @header[:error_protection] = head[16] == 0 ? true : false
+    @bitrate = current_frame[:bitrate]
+    @samplerate = current_frame[:samplerate]
+    @header[:padding] = current_frame[:padding]
+    @header[:private] = head[8] == 0 ? true : false
+    @channel_mode = CHANNEL_MODE[@channel_num = Mp3Info.bits(head, 7,6)]
+    @header[:mode_extension] = Mp3Info.bits(head, 5,4)
+    @header[:copyright] = (head[3] == 1 ? true : false)
+    @header[:original] = (head[2] == 1 ? true : false)
+    @header[:emphasis] = Mp3Info.bits(head, 1,0)
+    @vbr = false
 
     seek = @mpeg_version == 1 ? 
       (@channel_num == 3 ? 17 : 32) :       
