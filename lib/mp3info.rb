@@ -666,13 +666,19 @@ private
     #
     bitrate_frequency = Hash.new(0)
     frame_info = {}
-    0.upto(19) do |i|
-      first_frame_pos, current_frame, head = get_mpeg_header(@io)
+    0.upto(19) do
+      begin
+        first_frame_pos, current_frame, head = get_mpeg_header(@io)
+      rescue Mp3InfoError
+        next
+      end
       frame_info[current_frame[:bitrate]] = [first_frame_pos, current_frame, head]
       bitrate_frequency[current_frame[:bitrate]] += 1
     end
-    
+
     # find most common bitrate in first 20 frames
+    raise Mp3InfoError, "cannot find a valid frame" if bitrate_frequency.empty?
+      
     heuristic_bitrate = bitrate_frequency.sort_by{|k,v| v}.last.first
     
     first_frame_pos, current_frame, head = frame_info[heuristic_bitrate]

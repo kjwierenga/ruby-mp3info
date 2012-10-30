@@ -65,7 +65,11 @@ class Mp3Info
     end
 
     def self.ruby_18_encode(from, to, value)
-      Iconv.iconv(to, from, value).first
+      begin
+        Iconv.iconv(to, from, value).first
+      rescue Iconv::Failure
+        value
+      end
     end
 
     def self.decode_utf16(out)
